@@ -65,6 +65,23 @@ static const char *TAG = "app";
 static void gatts_profile_event_handler(esp_gatts_cb_event_t event,
 					esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
+
+
+struct gatts_profile_inst {
+    esp_gatts_cb_t gatts_cb;
+    uint16_t gatts_if;
+    uint16_t app_id;
+    uint16_t conn_id;
+    uint16_t service_handle;
+    esp_gatt_srvc_id_t service_id;
+    uint16_t char_handle;
+    esp_bt_uuid_t char_uuid;
+    esp_gatt_perm_t perm;
+    esp_gatt_char_prop_t property;
+    uint16_t descr_handle;
+    esp_bt_uuid_t descr_uuid;
+};
+
 /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
 /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
 static struct gatts_profile_inst profile_tab[PROFILE_NUM] = {
@@ -97,8 +114,10 @@ static uint8_t aforo_value[4]                 = {0x00, 0x00};
 
 // Características READ/WRITE
 static uint8_t intervalo_value[1]                 = {0x01};
-static uint8_t rango_value[4]                 = {0x12, 0x22, 0x34, 0x44};
+static uint8_t rango_value[1]                 = {0x11};
 
+
+static int n_dispositivos = 0;
 
 static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
 {
@@ -164,7 +183,7 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
 
 
 };
-
+static const char remote_device_name[] = "ESP_GATTS_DEMO";
 static bool connect    = false;
 static bool get_server = false;
 static esp_gattc_char_elem_t *char_elem_result   = NULL;
@@ -302,20 +321,6 @@ static esp_ble_adv_params_t adv_params = {
     .adv_filter_policy   = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
 
-struct gatts_profile_inst {
-    esp_gatts_cb_t gatts_cb;
-    uint16_t gatts_if;
-    uint16_t app_id;
-    uint16_t conn_id;
-    uint16_t service_handle;
-    esp_gatt_srvc_id_t service_id;
-    uint16_t char_handle;
-    esp_bt_uuid_t char_uuid;
-    esp_gatt_perm_t perm;
-    esp_gatt_char_prop_t property;
-    uint16_t descr_handle;
-    esp_bt_uuid_t descr_uuid;
-};
 
 
 /* ---------------------- WiFi ---------------------- */
@@ -709,7 +714,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             case ESP_GAP_SEARCH_INQ_RES_EVT:
                 byte= scan_result->scan_rst.bda[0];
                 
-                if((scan_result->scan_rst.bda[0]==140 && scan_result->scan_rst.bda[1]==170)|| (rssi_to_distancia(scan_result->scan_rst.rssi)<=maxDistancia)){
+                if((scan_result->scan_rst.bda[0]==140 && scan_result->scan_rst.bda[1]==170)|| (rssi_to_distancia(scan_result->scan_rst.rssi)<=rango_value[0])){
                     n_dispositivos++; //Si está dentro del rango, se añade el dispositivo
                     ESP_LOGI(GATTC_TAG, "sbyte 0 %d", byte);
                     esp_log_buffer_hex(GATTC_TAG, scan_result->scan_rst.bda, 6);
@@ -1045,7 +1050,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 /* -------------------- Característica intervalo -------------------- */
                 if (handle_table[IDX_CHAR_VAL_C] == param->write.handle){
 			        intervalo_value[0] = param->write.value[0];
-			        ESP_LOGI("APP", "prepare write, handle = %d,", intervalo[0]); 
+			        ESP_LOGI("APP", "prepare write, handle = %d,", intervalo_value[0]); 
 			        esp_ble_gatts_send_indicate(profile_tab[0].gatts_if, 
 				              profile_tab[0].conn_id,
 				              handle_table[IDX_CHAR_VAL_C],
@@ -1054,7 +1059,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 /* -------------------- Característica rango  -------------------- */
                 if (handle_table[IDX_CHAR_VAL_D] == param->write.handle){
 			        rango_value[0] = param->write.value[0];
-			        ESP_LOGI("APP", "prepare write, handle = %d,", intervalo[0]); 
+			        ESP_LOGI("APP", "prepare write, handle = %d,", intervalo_value[0]); 
 			        esp_ble_gatts_send_indicate(profile_tab[0].gatts_if, 
 				              profile_tab[0].conn_id,
 				              handle_table[IDX_CHAR_VAL_D],
