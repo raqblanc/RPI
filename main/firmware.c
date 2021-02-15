@@ -1,10 +1,10 @@
- #include "freertos/FreeRTOS.h"
- #include "freertos/task.h"
- #include "freertos/event_groups.h"
- #include "esp_system.h"
- #include "esp_log.h"
- #include "nvs_flash.h"
- #include "esp_bt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_log.h"
+#include "nvs_flash.h"
+#include "esp_bt.h"
 
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
@@ -104,19 +104,20 @@ static const uint16_t character_declaration_uuid   = ESP_GATT_UUID_CHAR_DECLARE;
 static const uint16_t character_client_config_uuid = ESP_GATT_UUID_CHAR_CLIENT_CONFIG;
 //static const uint8_t char_prop_read                =  ESP_GATT_CHAR_PROP_BIT_READ;
 //static const uint8_t char_prop_write               = ESP_GATT_CHAR_PROP_BIT_WRITE;
+static const uint8_t char_prop_write_read               = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ;
 static const uint8_t char_prop_read_write_notify   = ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
 
 // Características READ/NOTIFY
 static uint8_t co2_ccc[2]      = {0x00, 0x00};
 static uint8_t co2_value[4]                 = {0x00, 0x00, 0x00, 0x00};
 static uint8_t aforo_ccc[2]      = {0x00, 0x00};
-static uint8_t aforo_value[4]                 = {0x00, 0x00};
+static uint8_t aforo_value[1]                 = {0x00};
 
 // Características READ/WRITE
 static uint8_t intervalo_value[1]                 = {0x01};
-static uint8_t rango_value[1]                 = {0x11};
+static uint8_t rango_value[1]                 = {0x00};
 
-
+static uint8_t dispositivos[30][6]; 
 static int n_dispositivos = 0;
 
 static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
@@ -162,7 +163,7 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
 
     [IDX_CHAR_C]      =
     {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-      CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_read_write_notify}},
+      CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_write_read}},
 
     /* Characteristic Value */
     [IDX_CHAR_VAL_C]  =
@@ -173,7 +174,7 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
     /* ----------------- RANGO ----------------- */
     [IDX_CHAR_D]      =
     {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid, ESP_GATT_PERM_READ,
-      CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_read_write_notify}},
+      CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE, (uint8_t *)&char_prop_write_read}},
 
     /* Characteristic Value */
     [IDX_CHAR_VAL_D]  =
@@ -183,7 +184,7 @@ static const esp_gatts_attr_db_t gatt_db[HRS_IDX_NB] =
 
 
 };
-static const char remote_device_name[] = "ESP_GATTS_DEMO";
+//static const char remote_device_name[] = "ESP_GATTS_DEMO";
 static bool connect    = false;
 static bool get_server = false;
 static esp_gattc_char_elem_t *char_elem_result   = NULL;
@@ -682,9 +683,11 @@ static void publish_data_task(void *pvParameters)
 
 
 static float rssi_to_distancia(int rssi){
-    float a = -66.18;
-    float b = -12.8;
+    float a = -57.37;
+    float b = 13.9;
+    rssi = rssi * -1;
     float y = a + b * log(rssi);
+    if(y < 0) y = 0;
     return y;
 }
 
@@ -692,8 +695,8 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 {
     uint8_t *adv_name = NULL;
     uint8_t adv_name_len = 0;
-    uint8_t byte;
     uint32_t duration = 10;
+    bool ok=true;
     switch (event) {
    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT: {
         esp_ble_gap_start_scanning(duration);
@@ -712,11 +715,20 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         esp_ble_gap_cb_param_t *scan_result = (esp_ble_gap_cb_param_t *)param;
         switch (scan_result->scan_rst.search_evt) {
             case ESP_GAP_SEARCH_INQ_RES_EVT:
-                byte= scan_result->scan_rst.bda[0];
-                
-                if((scan_result->scan_rst.bda[0]==140 && scan_result->scan_rst.bda[1]==170)|| (rssi_to_distancia(scan_result->scan_rst.rssi)<=rango_value[0])){
+            ok=true;
+
+            for(int i = 0;i<n_dispositivos;i++){
+            if((dispositivos[i][0]==scan_result->scan_rst.bda[0])&&(dispositivos[i][1]==scan_result->scan_rst.bda[1])&&(dispositivos[i][2]==scan_result->scan_rst.bda[2])&&(dispositivos[i][3]==scan_result->scan_rst.bda[3])&&(dispositivos[i][4]==scan_result->scan_rst.bda[4])&&(dispositivos[i][5]==scan_result->scan_rst.bda[5])){
+            ok=false; // Ya está dentro
+            }}
+           
+                if(ok && (rssi_to_distancia(scan_result->scan_rst.rssi)<rango_value[0]))
+                {
+               	// Guardar la MAC
+               	for(int i=0; i < 6; i++){
+               		dispositivos[n_dispositivos][i] = scan_result->scan_rst.bda[i];	
+               	}
                     n_dispositivos++; //Si está dentro del rango, se añade el dispositivo
-                    ESP_LOGI(GATTC_TAG, "sbyte 0 %d", byte);
                     esp_log_buffer_hex(GATTC_TAG, scan_result->scan_rst.bda, 6);
                     ESP_LOGI(GATTC_TAG, "searched Adv Data Len %d, Scan Response Len %d", scan_result->scan_rst.adv_data_len, scan_result->scan_rst.scan_rsp_len);
                     adv_name = esp_ble_resolve_adv_data(scan_result->scan_rst.ble_adv,
@@ -738,38 +750,13 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                     ESP_LOGI(GATTC_TAG, "Distancia %f", rssi_to_distancia(scan_result->scan_rst.rssi));
                         ESP_LOGI(GATTC_TAG, "\n");
 
-                    if (adv_name != NULL) {
-                        if (strlen(remote_device_name) == adv_name_len && strncmp((char *)adv_name, remote_device_name, adv_name_len) == 0) {
-                            ESP_LOGI(GATTC_TAG, "searched device %s\n", remote_device_name);
-                            if (connect == false) {
-                                connect = true;
-                                ESP_LOGI(GATTC_TAG, "connect to the remote device.");
-                                esp_ble_gap_stop_scanning();
-                                esp_ble_gattc_open(gl_profile_tab[PROFILE_A_APP_ID].gattc_if, scan_result->scan_rst.bda, scan_result->scan_rst.ble_addr_type, true);
-                            }
-                        }
-                    }
                 }
             break;
         case ESP_GAP_SEARCH_INQ_CMPL_EVT:
-
-        
-
-            n_dispositivos=n_dispositivos % 512;
-            ESP_LOGI(GATTC_TAG, "Estimación foro: %i \n", n_dispositivos);
-
-
-            // Guardar lo calculado en la característica
-            if(n_dispositivos>=256){
-                aforo_value[0]=n_dispositivos%256;
-                aforo_value[1]=255;
-            }
-            else{
-                aforo_value[0]=0;
-                aforo_value[1]=n_dispositivos;
-            }
+            aforo_value[0] = n_dispositivos;
+            n_dispositivos = 0;
             esp_ble_gap_start_scanning(duration);
-                break;
+            break;
         default:
             break;
                 
@@ -1059,7 +1046,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 /* -------------------- Característica rango  -------------------- */
                 if (handle_table[IDX_CHAR_VAL_D] == param->write.handle){
 			        rango_value[0] = param->write.value[0];
-			        ESP_LOGI("APP", "prepare write, handle = %d,", intervalo_value[0]); 
+			        ESP_LOGI("APP", "el nuevo rango es, handle = %d,", rango_value[0]); 
 			        esp_ble_gatts_send_indicate(profile_tab[0].gatts_if, 
 				              profile_tab[0].conn_id,
 				              handle_table[IDX_CHAR_VAL_D],
@@ -1263,10 +1250,10 @@ void app_main(void)
         return;
     }
 
-    /*ret = esp_ble_gattc_app_register(PROFILE_A_APP_ID);
+    ret = esp_ble_gattc_app_register(PROFILE_A_APP_ID);
     if (ret){
         ESP_LOGE(GATTC_TAG, "%s gattc app register failed, error code = %x\n", __func__, ret);
-    }*/
+    }
     
 
     esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
